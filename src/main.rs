@@ -1,11 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use eframe::{egui, App, NativeOptions};
-use egui::{
-    text::LayoutJob, Align, Color32, FontId, Frame, Image, Layout, Margin, RichText, Rounding,
-    ScrollArea, Separator, Stroke, TextFormat, ViewportBuilder,
+use eframe::{
+    egui,
+    egui::ViewportBuilder,
+    App, NativeOptions
 };
-#[allow(deprecated)] // Allow RetainedImage for now
-use egui_extras::RetainedImage;
+use egui::{
+    epaint::text::LayoutJob,
+    Color32, FontId, Frame, Layout, RichText, ScrollArea, Separator, Stroke,
+    Align, TextFormat, Margin
+};
+use egui::epaint::CornerRadius;
 use lazy_static::lazy_static;
 use open; // Keep open
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -26,12 +30,12 @@ use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 lazy_static! {
     static ref SYNTAX_SET: SyntaxSet = SyntaxSet::load_defaults_newlines();
     static ref THEME_SET: ThemeSet = ThemeSet::load_defaults();
-    #[allow(deprecated)] // Allow RetainedImage for now
-    static ref IMAGE_CACHE: Mutex<HashMap<String, RetainedImage>> = Mutex::new(HashMap::new());
+    static ref IMAGE_CACHE: Mutex<HashMap<String, Vec<u8>>> = Mutex::new(HashMap::new());
 }
 
 const CODE_FONT_SIZE: f32 = 13.0;
-const BODY_FONT_SIZE: f32 = 14.0;
+// Bigger, more inviting text
+const BODY_FONT_SIZE: f32 = 22.0;
 
 #[cfg(windows)]
 fn hide_console() {
@@ -182,37 +186,36 @@ impl MarkdownViewerApp {
 
 impl App for MarkdownViewerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Check for external file modifications every 60 frames.
-        if ctx.frame_nr() % 60 == 0 {
+        // Check for external file modifications every second (assuming 60fps).
+        if ctx.input(|i| i.time) as usize % 60 == 0 {
             self.check_file_modified(ctx);
         }
 
-        let visuals = if self.dark_mode {
-            let mut v = egui::Visuals::dark();
-            // Custom dark theme with blue-tinged gray
-            let dark_bg = Color32::from_rgb(40, 40, 55);
-            v.window_fill = dark_bg;
-            v.panel_fill = dark_bg;
-            v.faint_bg_color = Color32::from_rgb(50, 50, 65);
-            v.widgets.noninteractive.bg_fill = dark_bg;
+        // ——— FLAT HIGH-CONTRAST OVERLAY ———
+        use egui::{Visuals, Color32, Stroke};
 
-            // Set text to near-white (240,240,245 is a slightly blue-tinged white)
-            v.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(240, 240, 245);
-            v.override_text_color = Some(Color32::from_rgb(240, 240, 245)); // Correct way to override text color
+        // start from the default dark/light scheme
+        let mut visuals = if self.dark_mode { Visuals::dark() } else { Visuals::light() };
 
-            v
-        } else {
-            let mut v = egui::Visuals::light();
-            // Light theme adjustments
-            v.code_bg_color = Color32::from_rgb(245, 245, 245);
-            v.extreme_bg_color = Color32::from_rgb(255, 255, 255);
-            v.window_fill = Color32::from_rgb(255, 255, 255);
-            v.panel_fill = Color32::from_rgb(255, 255, 255);
-            v.widgets.noninteractive.bg_fill = Color32::from_rgb(255, 255, 255);
-            v.override_text_color = None; // Use default light mode text colors
-            v
-        };
+        // pure black background, pure white text in dark mode (and vice-versa)
+        visuals.window_fill = if self.dark_mode { Color32::BLACK } else { Color32::WHITE };
+        visuals.override_text_color = Some(if self.dark_mode { Color32::WHITE } else { Color32::BLACK });
+
+        // remove any shadows, borders or widget backgrounds
+        visuals.faint_bg_color = visuals.window_fill;
+        visuals.widgets.inactive.bg_fill = visuals.window_fill;
+        visuals.widgets.active.bg_fill   = visuals.window_fill;
+        visuals.widgets.hovered.bg_fill  = visuals.window_fill;
+
+        // no default separator shadows, etc.
+        visuals.extreme_bg_color = visuals.window_fill;
+        visuals.panel_fill = visuals.window_fill;
+        visuals.code_bg_color = visuals.window_fill;
+        visuals.widgets.noninteractive.bg_fill = visuals.window_fill;
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, visuals.override_text_color.unwrap_or(Color32::GRAY));
+
         ctx.set_visuals(visuals.clone());
+        // ————————————————————————————————
 
         // Obtain the syntect theme based on the current visuals.
         let syntect_theme = self.get_syntect_theme(&visuals);
@@ -295,7 +298,7 @@ impl App for MarkdownViewerApp {
             if current_time_val < *expiry_time {
                 let msg_clone = message.clone();
                 egui::TopBottomPanel::bottom("status_bar")
-                    .frame(Frame::default().inner_margin(Margin::symmetric(4.0, 2.0)))
+                    .frame(Frame::default().inner_margin(Margin::symmetric(4, 2)))
                     .show(ctx, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(&msg_clone);
@@ -316,20 +319,24 @@ impl App for MarkdownViewerApp {
 
         // --- Central Panel for Markdown Rendering ---
         egui::CentralPanel::default()
-            .frame(Frame {
-                inner_margin: Margin::same(12.0),
-                fill: visuals.window_fill, // Use window_fill color
-                ..Default::default()
-            })
+            .frame(Frame::default()
+                .corner_radius(CornerRadius::ZERO)
+                // pad 30px left/right, 20px top/bottom
+                .inner_margin(Margin::symmetric(30, 20))
+                .fill(visuals.window_fill)
+                .stroke(Stroke::NONE)
+            )
             .show(ctx, |ui| {
-                let scroll_id = ui.id().with("markdown_scroll");
                 let mut remembered_offset = self.scroll_offset.take();
-                let mut scroll_area = ScrollArea::vertical()
-                    .id_source(scroll_id)
-                    .auto_shrink([false, false]);
-                if let Some(offset) = remembered_offset.take() {
-                    scroll_area = scroll_area.vertical_scroll_offset(offset);
-                }
+                let scroll_area = ScrollArea::vertical()
+                    .id_salt("markdown_scroll")
+                    .auto_shrink([false, false])
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible);
+                let scroll_area = if let Some(offset) = remembered_offset.take() {
+                    scroll_area.vertical_scroll_offset(offset)
+                } else {
+                    scroll_area
+                };
                 let scroll_output = scroll_area.show(ui, |ui| {
                     render_markdown(ui, &self.markdown, &visuals, syntect_theme);
                 });
@@ -435,25 +442,18 @@ fn render_markdown<'a>(
                         let style = ui.style_mut();
                         style.visuals.widgets.noninteractive.bg_fill = Color32::TRANSPARENT;
                         style.visuals.widgets.noninteractive.bg_stroke = Stroke::NONE;
-                        Frame::none()
-                            .inner_margin(Margin {
-                                left: 10.0,
-                                right: 4.0,
-                                top: 2.0,
-                                bottom: 2.0,
-                            })
-                            .show(ui, |ui| {
-                                let rect = ui.available_rect_before_wrap();
-                                let line_rect = egui::Rect::from_min_max(
-                                    rect.left_top() + egui::vec2(2.0, 0.0),
-                                    rect.left_bottom() + egui::vec2(4.0, 0.0),
-                                );
-                                ui.painter().rect_filled(
-                                    line_rect,
-                                    Rounding::ZERO,
-                                    ui.visuals().widgets.noninteractive.fg_stroke.color,
-                                );
-                            });
+                        Frame::dark_canvas(ui.style()).inner_margin(Margin::symmetric(10, 4)).show(ui, |ui| {
+                            let rect = ui.available_rect_before_wrap();
+                            let line_rect = egui::Rect::from_min_max(
+                                rect.left_top() + egui::vec2(2.0, 0.0),
+                                rect.left_bottom() + egui::vec2(4.0, 0.0),
+                            );
+                            ui.painter().rect_filled(
+                                line_rect,
+                                CornerRadius::ZERO,
+                                ui.visuals().widgets.noninteractive.fg_stroke.color,
+                            );
+                        });
                     });
                 }
                 Tag::CodeBlock(kind) => {
@@ -573,7 +573,7 @@ fn render_markdown<'a>(
                     flush_block_content(&mut state);
                     state.ui.add_space(4.0);
                     state.ui.label(format!("[^{}]:", label));
-                    state.ui.indent("footnote", |ui| {});
+                    state.ui.indent("footnote", |_ui| {});
                 }
                 _ => {}
             },
@@ -828,13 +828,13 @@ fn flush_block_content(state: &mut RenderState<'_, '_>) {
 fn render_code_block(state: &mut RenderState<'_, '_>) {
     let code = std::mem::take(&mut state.code_block_content);
     let _language_name = state.code_language.as_deref().unwrap_or("text");
-    let frame = Frame::none()
+    let frame = Frame::new()
         .fill(state.visuals.code_bg_color)
-        .inner_margin(Margin::symmetric(6.0, 4.0))
-        .rounding(Rounding::same(4.0));
+        .inner_margin(Margin::symmetric(6, 4))
+        .corner_radius(4.0);
     frame.show(state.ui, |ui| {
         ScrollArea::horizontal()
-            .id_source(ui.next_auto_id())
+            .id_salt("code_block")
             .show(ui, |ui| {
                 let mut job = LayoutJob::default();
                 if let Some(highlighter) = state.highlighter.as_mut() {
@@ -871,7 +871,7 @@ fn render_code_block(state: &mut RenderState<'_, '_>) {
                         },
                     );
                 }
-                ui.add(egui::Label::new(job).wrap(false));
+                ui.add(egui::Label::new(job).wrap());
             });
     });
 }
@@ -885,12 +885,12 @@ fn render_table(state: &mut RenderState<'_, '_>) {
     if num_columns == 0 {
         return;
     }
-    let frame = Frame::none()
+    let frame = Frame::new()
         .stroke(Stroke::new(
             1.0,
             state.visuals.widgets.noninteractive.bg_stroke.color,
         ))
-        .inner_margin(Margin::same(4.0));
+        .inner_margin(Margin::same(4));
     frame.show(state.ui, |ui| {
         egui::Grid::new(ui.next_auto_id())
             .num_columns(num_columns)
@@ -899,7 +899,7 @@ fn render_table(state: &mut RenderState<'_, '_>) {
             .show(ui, |ui| {
                 for (row_idx, row_data) in rows.iter().enumerate() {
                     for cell_job in row_data {
-                        ui.add(egui::Label::new(cell_job.clone()).wrap(true));
+                        ui.add(egui::Label::new(cell_job.clone()).wrap());
                     }
                     ui.end_row();
                     if row_idx == 0 && rows.len() > 1 {
@@ -910,31 +910,52 @@ fn render_table(state: &mut RenderState<'_, '_>) {
     });
 }
 
-#[allow(deprecated)] // Allow RetainedImage for now
 fn render_image(ui: &mut egui::Ui, url: &str, alt_text: &str) {
-    let mut cache = IMAGE_CACHE.lock().unwrap();
-    let url_string = url.to_string();
-    let retained_image = cache.entry(url_string.clone()).or_insert_with(|| {
-        log::debug!("Loading image: {}", url);
-        // Ensure you have a `placeholder.png` in the `src` directory!
-        RetainedImage::from_image_bytes("placeholder", include_bytes!("placeholder.png"))
-            .expect("Failed to load placeholder image bytes") // Panic if placeholder fails
-    });
-    // Use egui::Image now
-    let img_widget = Image::new(egui::ImageSource::Texture(egui::load::SizedTexture::new(
-        retained_image.texture_id(ui.ctx()),
-        retained_image.size_vec2(),
-    )))
-    .fit_to_original_size(1.0)
-    .max_width(ui.available_width() * 0.8);
     ui.add_space(4.0);
-    let response = ui.add(img_widget);
-    if !alt_text.is_empty() {
-        response.on_hover_text(format!("{} ({})", alt_text, url));
-    } else {
-        response.on_hover_text(url);
+    
+    // Try to load the specified image
+    match load_image(ui, url) {
+        Ok(texture_handle) => {
+            let img_widget = egui::Image::new(&texture_handle)
+                .max_width(ui.available_width() * 0.8);
+            
+            let response = ui.add(img_widget);
+            
+            if !alt_text.is_empty() {
+                response.on_hover_text(format!("{} ({})", alt_text, url));
+            } else {
+                response.on_hover_text(url);
+            }
+        },
+        Err(e) => {
+            ui.label("⚠️ Failed to load image");
+            ui.label(format!("Error: {}", e));
+        }
     }
+    
     ui.add_space(4.0);
+}
+
+fn load_image(ui: &egui::Ui, path: &str) -> Result<egui::TextureHandle, Box<dyn std::error::Error>> {
+    // Load the image from file
+    let img = image::open(path)?;
+    
+    // Convert to RGBA8
+    let img = img.into_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    let pixels = img.into_raw();
+    
+    // Create a color image for egui
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+    
+    // Load the texture into egui
+    let texture = ui.ctx().load_texture(
+        path.to_string(),
+        color_image,
+        egui::TextureOptions::LINEAR
+    );
+    
+    Ok(texture)
 }
 
 fn syntect_style_to_text_format(style: SyntectStyle) -> TextFormat {
@@ -1111,57 +1132,63 @@ Try it out!
 
 Use 📂 Open or drag & drop a .md file onto the window. "#;
 
-fn main() -> Result<(), eframe::Error> {
-    env_logger::init();
 
+fn main() -> Result<(), eframe::Error> {
+    // Initialize logger if debug feature is enabled
+    #[cfg(debug_assertions)]
+    eframe::__private::tracing_subscriber::fmt::init();
     hide_console();
 
-    let args: Vec<String> = env::args().collect();
-
-    let options = NativeOptions {
-        viewport: ViewportBuilder::default()
-            .with_inner_size([900.0, 700.0])
-            .with_drag_and_drop(true),
-        persist_window: true,
-        ..Default::default()
-    };
-
-    let initial_app = if args.len() > 1 {
-        let file_path = PathBuf::from(&args[1]);
-        if file_path.exists()
-            && (file_path
-                .extension()
-                .map_or(false, |e| e == "md" || e == "markdown"))
-        {
-            log::info!(
-                "Loading initial file from argument: {}",
-                file_path.display()
-            );
-            MarkdownViewerApp::new_from_file(file_path)
-        } else {
-            log::warn!(
-                "Invalid file path or extension provided via argument: {}",
-                args[1]
-            );
-            MarkdownViewerApp::error(format!("Invalid file path provided: {}", args[1]))
-        }
+    // Create the initial app state
+    let initial_app = if let Some(path) = std::env::args().nth(1) {
+        let path = std::path::PathBuf::from(path);
+        MarkdownViewerApp::new_from_file(path)
     } else {
         MarkdownViewerApp::new_default()
     };
 
-    let app_loaded = |cc: &eframe::CreationContext<'_>| -> Box<dyn App> {
-        let mut app = initial_app;
+    // Configure the viewport
+    let viewport = ViewportBuilder::default()
+        .with_inner_size(egui::vec2(900.0, 700.0))
+        .with_drag_and_drop(true)
+        .with_decorations(true)  // Show title bar and borders
+        .with_resizable(true)
+        .with_mouse_passthrough(false);
 
-        if let Some(storage) = cc.storage {
-            if let Some(dark_mode) = eframe::get_value::<bool>(storage, "dark_mode") {
-                app.dark_mode = dark_mode;
-                log::info!("Loaded dark_mode state: {}", dark_mode);
-            }
-        }
-        Box::new(app)
+    // Create the native options
+    let options = NativeOptions {
+        viewport,
+        multisampling: 4,  // 4x MSAA for better text rendering
+        hardware_acceleration: eframe::HardwareAcceleration::Required,
+        renderer: eframe::Renderer::Glow,
+        ..Default::default()
     };
 
-    eframe::run_native("Markdown Viewer", options, Box::new(app_loaded))
+    // Create assets directory if it doesn't exist
+    std::fs::create_dir_all("assets").expect("Failed to create assets directory");
+
+    // Run the application
+    eframe::run_native(
+        "Markdown Viewer",
+        options,
+        Box::new(move |cc| {
+            // This gives us image support:
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            
+            // Set up visual style
+            let mut visuals = egui::Visuals::dark();
+            // Use a subtle shadow for the window
+            visuals.window_shadow = egui::epaint::Shadow {
+                offset: [2, 2],  // [i8; 2] type for offset
+                blur: 5,         // u8 type for blur
+                spread: 0,        // u8 type for spread
+                color: Color32::from_black_alpha(30),
+            };
+            cc.egui_ctx.set_visuals(visuals);
+            
+            Ok(Box::new(initial_app))
+        }),
+    )
 }
 
 trait LayoutJobExt {
