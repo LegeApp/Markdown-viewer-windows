@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>MarkdownViewer.Wpf</AssemblyName>
+    <RootNamespace>MarkdownViewer.Wpf</RootNamespace>
+    <StartupObject>MarkdownViewer.Wpf.App</StartupObject>
+    <Platforms>AnyCPU;x64</Platforms>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.39" />
+    <!-- Temporarily commented out for .NET 10 compatibility
+    <PackageReference Include="WPF-UI" Version="4.0.0" />
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\markdig\src\Markdig\Markdig.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\MarkdownViewer.Native\x64\$(Configuration)\MarkdownViewer.Native.dll"
+             Link="MarkdownViewer.Native.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Condition="Exists('..\MarkdownViewer.Native\x64\$(Configuration)\MarkdownViewer.Native.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\**\*" />
+  </ItemGroup>
+</Project>

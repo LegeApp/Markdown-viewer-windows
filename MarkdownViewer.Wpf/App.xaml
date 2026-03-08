@@ -1,0 +1,21 @@
+<Application x:Class="MarkdownViewer.Wpf.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:MarkdownViewer.Wpf.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- WPF-UI themes temporarily removed for .NET 10 compatibility -->
+            </ResourceDictionary.MergedDictionaries>
+
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
+
+            <SolidColorBrush x:Key="WindowBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}"/>
+            <SolidColorBrush x:Key="ControlBrush" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}"/>
+            <SolidColorBrush x:Key="ControlTextBrush" Color="{DynamicResource {x:Static SystemColors.ControlTextColorKey}}"/>
+            <SolidColorBrush x:Key="GrayTextBrush" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}"/>
+            <SolidColorBrush x:Key="ActiveBorderBrush" Color="{DynamicResource {x:Static SystemColors.ActiveBorderColorKey}}"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
