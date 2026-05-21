@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Markdig.WebApp": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "api/to_html?text=test"
+    }
+  }
+}

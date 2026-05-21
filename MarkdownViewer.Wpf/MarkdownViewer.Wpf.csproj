@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <_HasNet10Sdk Condition="'$(NETCoreSdkVersion)' != '' AND $([MSBuild]::VersionGreaterThanOrEquals('$(NETCoreSdkVersion)', '10.0'))">true</_HasNet10Sdk>
+    <TargetFrameworks Condition="'$(_HasNet10Sdk)' == 'true'">net9.0-windows;net10.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="'$(_HasNet10Sdk)' != 'true'">net9.0-windows</TargetFrameworks>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>MarkdownViewer</AssemblyName>
+    <Product>Markdown Viewer</Product>
+    <Description>Fast Markdown document viewer for Windows.</Description>
+    <RootNamespace>MarkdownViewer.Wpf</RootNamespace>
+    <StartupObject>MarkdownViewer.Wpf.App</StartupObject>
+    <Platforms>AnyCPU;x64</Platforms>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\markdig\src\Markdig\Markdig.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\**\*" />
+  </ItemGroup>
+
+  <Target Name="RemovePublishedPdbFiles" AfterTargets="Publish">
+    <ItemGroup>
+      <PublishedPdbFiles Include="$(PublishDir)*.pdb" />
+    </ItemGroup>
+
+    <Delete Files="@(PublishedPdbFiles)" />
+  </Target>
+</Project>

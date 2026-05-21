@@ -1,0 +1,20 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.sln.docstates
+*.log
+*.nupkg
+*.snk
+project.assets.json
+
+## VS
+.vs/
+*.sln.ide/
+
+## Publish output
+publish/
+
+## Temp
+*.tmp
